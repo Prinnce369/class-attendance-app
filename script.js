@@ -1,749 +1,567 @@
-const STORAGE_KEY = 'attendance-tracker-state-v1';
-const GEO_OPTIONS = {
-  enableHighAccuracy: true,
-  timeout: 10000,
-  maximumAge: 0
-};
+const KEY = "attendance-simple-v1";
 
 const defaultState = {
+  user: null,
+  location: null,
   classroom: {
-    courseName: 'MAD9014 - Interactive Media Design',
-    instructorName: 'Prof. David P.',
-    room: 'C104',
+    courseName: "MAD9014 - Interactive Media Design",
+    instructorName: "Prof. David P.",
+    room: "C104",
     latitude: null,
     longitude: null,
     radius: 50,
     windowOpen: false,
-    activeSessionId: null,
-    lastOpenedAt: null,
-    lastClosedAt: null
+    sessionId: null,
+    openedAt: null
   },
-  currentUser: null,
-  latestStudentLocation: null,
   checkins: []
 };
 
-let state = loadState();
+let state = load();
 
-const elements = {
-  userChip: document.getElementById('user-chip'),
-  signOutBtn: document.getElementById('sign-out-btn'),
-  signInForm: document.getElementById('sign-in-form'),
-  signInBtn: document.getElementById('sign-in-btn'),
-  githubUsername: document.getElementById('github-username'),
-  roleSelect: document.getElementById('role-select'),
-  authFeedback: document.getElementById('auth-feedback'),
-  profilePreview: document.getElementById('profile-preview'),
+const $ = (id) => document.getElementById(id);
 
-  studentPanel: document.getElementById('student-panel'),
-  studentEligibilityPill: document.getElementById('student-eligibility-pill'),
-  studentCourseName: document.getElementById('student-course-name'),
-  studentCourseMeta: document.getElementById('student-course-meta'),
-  locationStatusText: document.getElementById('location-status-text'),
-  distanceReadout: document.getElementById('distance-readout'),
-  accuracyReadout: document.getElementById('accuracy-readout'),
-  enableLocationBtn: document.getElementById('enable-location-btn'),
-  checkInBtn: document.getElementById('check-in-btn'),
-  studentFeedback: document.getElementById('student-feedback'),
-  historyList: document.getElementById('history-list'),
-  historyCount: document.getElementById('history-count'),
+const ui = {
+  authScreen: $("auth-screen"),
+  studentScreen: $("student-screen"),
+  instructorScreen: $("instructor-screen"),
 
-  instructorPanel: document.getElementById('instructor-panel'),
-  sessionPill: document.getElementById('session-pill'),
-  classroomForm: document.getElementById('classroom-form'),
-  courseNameInput: document.getElementById('course-name-input'),
-  instructorNameInput: document.getElementById('instructor-name-input'),
-  roomInput: document.getElementById('room-input'),
-  latitudeInput: document.getElementById('latitude-input'),
-  longitudeInput: document.getElementById('longitude-input'),
-  radiusInput: document.getElementById('radius-input'),
-  useCurrentLocationBtn: document.getElementById('use-current-location-btn'),
-  toggleWindowBtn: document.getElementById('toggle-window-btn'),
-  seedDemoBtn: document.getElementById('seed-demo-btn'),
-  resetDemoBtn: document.getElementById('reset-demo-btn'),
-  instructorFeedback: document.getElementById('instructor-feedback'),
-  rosterList: document.getElementById('roster-list'),
-  liveRosterCount: document.getElementById('live-roster-count'),
+  authCourseName: $("auth-course-name"),
+  authCourseMeta: $("auth-course-meta"),
 
-  windowStatusPill: document.getElementById('window-status-pill'),
-  radiusReadout: document.getElementById('radius-readout'),
-  roomReadout: document.getElementById('room-readout'),
-  courseReadout: document.getElementById('course-readout'),
-  rosterCount: document.getElementById('roster-count')
+  signinModal: $("signin-modal"),
+  openSigninModal: $("open-signin-modal"),
+  closeSigninModal: $("close-signin-modal"),
+  githubUsername: $("github-username"),
+  signinRole: $("signin-role"),
+  githubSigninSubmit: $("github-signin-submit"),
+  authMessage: $("auth-message"),
+
+  studentAvatar: $("student-avatar"),
+  studentSignout: $("student-signout"),
+  studentProfileMini: $("student-profile-mini"),
+  studentWindowBadge: $("student-window-badge"),
+  enableLocation: $("enable-location"),
+  checkInBtn: $("check-in-btn"),
+  studentStatusText: $("student-status-text"),
+  distanceOutput: $("distance-output"),
+  accuracyOutput: $("accuracy-output"),
+  studentMessage: $("student-message"),
+  historyCount: $("history-count"),
+  historyList: $("history-list"),
+  locationDot: $("location-dot"),
+
+  instructorAvatar: $("instructor-avatar"),
+  instructorSignout: $("instructor-signout"),
+  courseName: $("course-name"),
+  instructorName: $("instructor-name"),
+  roomName: $("room-name"),
+  latitude: $("latitude"),
+  longitude: $("longitude"),
+  radius: $("radius"),
+  useCurrentClassroomLocation: $("use-current-classroom-location"),
+  saveClassroomSettings: $("save-classroom-settings"),
+  toggleWindow: $("toggle-window"),
+  instructorWindowText: $("instructor-window-text"),
+  instructorClassroomText: $("instructor-classroom-text"),
+  instructorRadiusText: $("instructor-radius-text"),
+  instructorMessage: $("instructor-message"),
+  rosterCount: $("roster-count"),
+  rosterList: $("roster-list")
 };
 
-init();
+start();
 
-function init() {
+function start() {
   bindEvents();
   render();
 }
 
 function bindEvents() {
-  elements.signInForm.addEventListener('submit', handleSignIn);
-  elements.signOutBtn.addEventListener('click', handleSignOut);
-  elements.enableLocationBtn.addEventListener('click', handleEnableLocation);
-  elements.checkInBtn.addEventListener('click', handleCheckIn);
-  elements.classroomForm.addEventListener('submit', handleSaveClassroom);
-  elements.useCurrentLocationBtn.addEventListener('click', handleUseCurrentLocation);
-  elements.toggleWindowBtn.addEventListener('click', handleToggleWindow);
-  elements.seedDemoBtn.addEventListener('click', handleSeedDemoData);
-  elements.resetDemoBtn.addEventListener('click', handleResetDemoData);
-}
+  ui.openSigninModal.addEventListener("click", () => show(ui.signinModal));
+  ui.closeSigninModal.addEventListener("click", () => hide(ui.signinModal));
+  document.querySelector(".modal-backdrop").addEventListener("click", () => hide(ui.signinModal));
 
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
-      return structuredClone(defaultState);
-    }
+  ui.githubSigninSubmit.addEventListener("click", signInWithGithub);
 
-    const parsed = JSON.parse(saved);
-    return {
-      classroom: {
-        ...defaultState.classroom,
-        ...(parsed.classroom || {})
-      },
-      currentUser: parsed.currentUser || null,
-      latestStudentLocation: parsed.latestStudentLocation || null,
-      checkins: Array.isArray(parsed.checkins) ? parsed.checkins : []
-    };
-  } catch (error) {
-    console.error('Failed to load state:', error);
-    return structuredClone(defaultState);
-  }
-}
+  ui.studentSignout.addEventListener("click", signOut);
+  ui.instructorSignout.addEventListener("click", signOut);
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  ui.enableLocation.addEventListener("click", getStudentLocation);
+  ui.checkInBtn.addEventListener("click", checkIn);
+
+  ui.useCurrentClassroomLocation.addEventListener("click", getInstructorLocation);
+  ui.saveClassroomSettings.addEventListener("click", saveClassroom);
+  ui.toggleWindow.addEventListener("click", toggleWindow);
 }
 
 function render() {
-  renderTopSummary();
-  renderAuthState();
-  renderStudentPanel();
-  renderInstructorPanel();
+  renderShared();
+  renderScreens();
+  renderStudent();
+  renderInstructor();
 }
 
-function renderTopSummary() {
-  const activeSessionCheckins = getActiveSessionCheckins();
-  elements.windowStatusPill.textContent = state.classroom.windowOpen ? 'Open' : 'Closed';
-  elements.windowStatusPill.className = `pill ${state.classroom.windowOpen ? 'pill-success' : 'pill-muted'}`;
-  elements.radiusReadout.textContent = `${Number(state.classroom.radius) || 0} m`;
-  elements.roomReadout.textContent = state.classroom.room || 'Not set';
-  elements.courseReadout.textContent = state.classroom.courseName || 'Not set';
-  elements.rosterCount.textContent = `${activeSessionCheckins.length} ${activeSessionCheckins.length === 1 ? 'student' : 'students'}`;
+function renderShared() {
+  ui.authCourseName.textContent = state.classroom.courseName;
+  ui.authCourseMeta.textContent = `${state.classroom.instructorName} | Room ${state.classroom.room}`;
 }
 
-function renderAuthState() {
-  const user = state.currentUser;
+function renderScreens() {
+  hide(ui.authScreen);
+  hide(ui.studentScreen);
+  hide(ui.instructorScreen);
 
-  if (!user) {
-    elements.userChip.classList.add('hidden');
-    elements.signOutBtn.classList.add('hidden');
-    elements.profilePreview.classList.add('hidden');
-    elements.signInForm.classList.remove('hidden');
+  if (!state.user) {
+    show(ui.authScreen);
     return;
   }
 
-  elements.userChip.innerHTML = `
-    <img src="${escapeHtml(user.avatarUrl)}" alt="${escapeHtml(user.name)} avatar">
+  if (state.user.role === "student") {
+    show(ui.studentScreen);
+  } else {
+    show(ui.instructorScreen);
+  }
+}
+
+function renderStudent() {
+  if (!state.user || state.user.role !== "student") return;
+
+  setAvatar(ui.studentAvatar, state.user.avatarUrl);
+
+  ui.studentProfileMini.innerHTML = `
+    <img src="${safe(state.user.avatarUrl)}" alt="${safe(state.user.name)} avatar">
     <div>
-      <strong>${escapeHtml(user.name)}</strong>
-      <small>${capitalize(user.role)} · @${escapeHtml(user.username)}</small>
+      <strong>${safe(state.user.name)}</strong>
+      <p>@${safe(state.user.username)}</p>
     </div>
   `;
-  elements.userChip.classList.remove('hidden');
-  elements.signOutBtn.classList.remove('hidden');
-  elements.signInForm.classList.add('hidden');
 
-  elements.profilePreview.innerHTML = `
-    <img src="${escapeHtml(user.avatarUrl)}" alt="${escapeHtml(user.name)} avatar">
-    <div class="profile-text">
-      <h3>${escapeHtml(user.name)}</h3>
-      <p>@${escapeHtml(user.username)}</p>
-      <p class="profile-meta">Signed in as ${capitalize(user.role)} · Public GitHub profile fetched successfully.</p>
-    </div>
-  `;
-  elements.profilePreview.classList.remove('hidden');
-}
+  const check = getCheckState();
 
-function renderStudentPanel() {
-  const classroom = state.classroom;
-  const user = state.currentUser;
-  const isStudent = user && user.role === 'student';
-  const studentLocation = state.latestStudentLocation;
-  const checkinState = getStudentCheckInState();
+  ui.studentWindowBadge.textContent = check.badge;
+  ui.studentWindowBadge.className = `window-badge ${check.badgeClass}`;
+  ui.checkInBtn.disabled = !check.allowed;
 
-  elements.studentCourseName.textContent = classroom.courseName || 'Course name not set';
-  elements.studentCourseMeta.textContent = `${classroom.instructorName || 'Instructor not set'} | Room ${classroom.room || '—'}`;
-  elements.studentFeedback.classList.add('hidden');
-
-  if (!isStudent) {
-    elements.studentEligibilityPill.textContent = 'Sign in as a student';
-    elements.studentEligibilityPill.className = 'pill pill-muted';
-    elements.locationStatusText.textContent = 'Student tools unlock after a student signs in.';
-    elements.distanceReadout.textContent = '—';
-    elements.accuracyReadout.textContent = '—';
-    elements.enableLocationBtn.disabled = true;
-    elements.checkInBtn.disabled = true;
-    renderHistoryList([]);
-    return;
+  if (state.location) {
+    show(ui.locationDot);
+    ui.studentStatusText.textContent = "Location captured successfully.";
+    ui.distanceOutput.textContent = check.distance === null ? "—" : `${check.distance.toFixed(1)} m`;
+    ui.accuracyOutput.textContent = `${Math.round(state.location.accuracy)} m`;
+  } else {
+    hide(ui.locationDot);
+    ui.studentStatusText.textContent = "Waiting for location data...";
+    ui.distanceOutput.textContent = "—";
+    ui.accuracyOutput.textContent = "—";
   }
 
-  elements.enableLocationBtn.disabled = false;
-  elements.checkInBtn.disabled = !checkinState.allowed;
-  elements.studentEligibilityPill.textContent = checkinState.label;
-  elements.studentEligibilityPill.className = `pill ${checkinState.pillClass}`;
-  elements.locationStatusText.textContent = studentLocation
-    ? `Location captured at ${formatDateTime(studentLocation.timestamp)}.`
-    : 'Location not requested yet.';
-  elements.distanceReadout.textContent = studentLocation && Number.isFinite(checkinState.distance)
-    ? `${checkinState.distance.toFixed(1)} m`
-    : '—';
-  elements.accuracyReadout.textContent = studentLocation
-    ? `${Math.round(studentLocation.accuracy)} m`
-    : '—';
-
-  const userHistory = state.checkins
-    .filter((record) => record.userId === user.id)
+  const history = state.checkins
+    .filter((item) => item.userId === state.user.id)
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  renderHistoryList(userHistory);
-}
-
-function renderHistoryList(history) {
-  elements.historyCount.textContent = `${history.length} ${history.length === 1 ? 'record' : 'records'}`;
+  ui.historyCount.textContent = history.length;
 
   if (history.length === 0) {
-    elements.historyList.innerHTML = '<li class="empty-item">No attendance records yet.</li>';
-    return;
-  }
-
-  elements.historyList.innerHTML = history
-    .map((record) => `
-      <li class="list-line">
-        <div>
-          <h4>${escapeHtml(record.courseName)}</h4>
-          <p>${escapeHtml(record.room)} · ${formatDateTime(record.timestamp)}</p>
-          <small>Status: ${escapeHtml(record.status)} · Distance: ${record.distance.toFixed(1)} m</small>
-        </div>
-        <span class="pill pill-success">Present</span>
-      </li>
-    `)
-    .join('');
-}
-
-function renderInstructorPanel() {
-  const user = state.currentUser;
-  const isInstructor = user && user.role === 'instructor';
-  const classroom = state.classroom;
-  const activeSessionCheckins = getActiveSessionCheckins();
-
-  elements.courseNameInput.value = classroom.courseName || '';
-  elements.instructorNameInput.value = classroom.instructorName || '';
-  elements.roomInput.value = classroom.room || '';
-  elements.latitudeInput.value = classroom.latitude ?? '';
-  elements.longitudeInput.value = classroom.longitude ?? '';
-  elements.radiusInput.value = classroom.radius ?? 50;
-
-  if (!isInstructor) {
-    elements.instructorPanel.style.opacity = '0.78';
-    elements.toggleWindowBtn.disabled = true;
-    elements.useCurrentLocationBtn.disabled = true;
-    elements.seedDemoBtn.disabled = true;
-    elements.resetDemoBtn.disabled = true;
-    elements.classroomForm.querySelectorAll('input').forEach((input) => {
-      input.disabled = true;
-    });
-    elements.classroomForm.querySelector('button[type="submit"]').disabled = true;
+    ui.historyList.innerHTML = `<li class="empty-item">No attendance records yet.</li>`;
   } else {
-    elements.instructorPanel.style.opacity = '1';
-    elements.toggleWindowBtn.disabled = false;
-    elements.useCurrentLocationBtn.disabled = false;
-    elements.seedDemoBtn.disabled = false;
-    elements.resetDemoBtn.disabled = false;
-    elements.classroomForm.querySelectorAll('input').forEach((input) => {
-      input.disabled = false;
-    });
-    elements.classroomForm.querySelector('button[type="submit"]').disabled = false;
-  }
-
-  elements.sessionPill.textContent = classroom.windowOpen
-    ? `Session active · ${formatDateTime(classroom.lastOpenedAt)}`
-    : 'No active session';
-  elements.sessionPill.className = `pill ${classroom.windowOpen ? 'pill-success' : 'pill-muted'}`;
-  elements.toggleWindowBtn.textContent = classroom.windowOpen ? 'Close check-in window' : 'Open check-in window';
-  elements.liveRosterCount.textContent = `${activeSessionCheckins.length} ${activeSessionCheckins.length === 1 ? 'present' : 'present'}`;
-
-  if (activeSessionCheckins.length === 0) {
-    elements.rosterList.innerHTML = '<li class="empty-item">No students have checked in for the active session.</li>';
-    return;
-  }
-
-  elements.rosterList.innerHTML = activeSessionCheckins
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-    .map((record) => `
-      <li class="list-line">
-        <div>
-          <h4>${escapeHtml(record.userName)}</h4>
-          <p>@${escapeHtml(record.username)} · Checked in at ${formatTime(record.timestamp)}</p>
-          <small>Distance: ${record.distance.toFixed(1)} m · Accuracy: ${Math.round(record.accuracy)} m</small>
-        </div>
-        <span class="pill pill-success">Present</span>
+    ui.historyList.innerHTML = history.map((item) => `
+      <li class="history-item">
+        <h4>${safe(item.courseName)}</h4>
+        <p>${formatDate(item.timestamp)} · Room ${safe(item.room)}</p>
+        <small>Status: Present · Distance: ${item.distance.toFixed(1)} m</small>
       </li>
-    `)
-    .join('');
+    `).join("");
+  }
 }
 
-async function handleSignIn(event) {
-  event.preventDefault();
-  const username = elements.githubUsername.value.trim();
-  const role = elements.roleSelect.value;
+function renderInstructor() {
+  if (!state.user || state.user.role !== "instructor") return;
+
+  setAvatar(ui.instructorAvatar, state.user.avatarUrl);
+
+  ui.courseName.value = state.classroom.courseName;
+  ui.instructorName.value = state.classroom.instructorName;
+  ui.roomName.value = state.classroom.room;
+  ui.latitude.value = state.classroom.latitude ?? "";
+  ui.longitude.value = state.classroom.longitude ?? "";
+  ui.radius.value = state.classroom.radius;
+
+  ui.instructorWindowText.textContent = state.classroom.windowOpen
+    ? `Open since ${formatTime(state.classroom.openedAt)}`
+    : "Closed";
+
+  ui.instructorClassroomText.textContent = state.classroom.room;
+  ui.instructorRadiusText.textContent = `${state.classroom.radius} m`;
+  ui.toggleWindow.textContent = state.classroom.windowOpen
+    ? "Close check-in Window"
+    : "Open check-in Window";
+
+  const roster = activeRoster();
+  ui.rosterCount.textContent = roster.length;
+
+  if (roster.length === 0) {
+    ui.rosterList.innerHTML = `<li class="empty-item">No students checked in yet.</li>`;
+  } else {
+    ui.rosterList.innerHTML = roster.map((item) => `
+      <li class="history-item">
+        <h4>${safe(item.userName)}</h4>
+        <p>@${safe(item.username)} · Checked in at ${formatTime(item.timestamp)}</p>
+        <small>Distance: ${item.distance.toFixed(1)} m</small>
+      </li>
+    `).join("");
+  }
+}
+
+async function signInWithGithub() {
+  const username = ui.githubUsername.value.trim();
+  const role = ui.signinRole.value;
+
+  clearMessage(ui.authMessage);
 
   if (!username) {
-    showFeedback(elements.authFeedback, 'Please enter a GitHub username.', 'error');
-    return;
+    return message(ui.authMessage, "Please enter a GitHub username.", "error");
   }
 
-  toggleLoading(elements.signInBtn, true, 'Signing in...');
-  showFeedback(elements.authFeedback, 'Fetching public GitHub profile...', 'info');
+  loading(ui.githubSigninSubmit, true, "Signing in...");
 
   try {
-    const response = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`);
+    const res = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`);
+    if (!res.ok) throw new Error("GitHub user not found.");
 
-    if (!response.ok) {
-      throw new Error('GitHub profile not found. Try another public username.');
-    }
+    const data = await res.json();
 
-    const profile = await response.json();
-    state.currentUser = {
-      id: profile.id ? String(profile.id) : `demo-${username.toLowerCase()}`,
-      username: profile.login,
-      name: profile.name || profile.login,
-      avatarUrl: profile.avatar_url,
-      profileUrl: profile.html_url,
-      role
+    state.user = {
+      id: String(data.id || username.toLowerCase()),
+      username: data.login || username,
+      name: data.name || data.login || username,
+      avatarUrl: data.avatar_url || "",
+      role: role
     };
 
-    saveState();
-    elements.signInForm.reset();
-    showFeedback(elements.authFeedback, `${state.currentUser.name} signed in successfully as ${role}.`, 'success');
+    state.location = null;
+    save();
+    hide(ui.signinModal);
     render();
   } catch (error) {
-    showFeedback(elements.authFeedback, error.message || 'Unable to sign in right now.', 'error');
+    message(ui.authMessage, error.message || "Sign-in failed.", "error");
   } finally {
-    toggleLoading(elements.signInBtn, false, 'Sign in with GitHub profile');
+    loading(ui.githubSigninSubmit, false, "Continue");
   }
 }
 
-function handleSignOut() {
-  state.currentUser = null;
-  state.latestStudentLocation = null;
-  saveState();
-  showFeedback(elements.authFeedback, 'Signed out successfully.', 'info');
+function signOut() {
+  state.user = null;
+  state.location = null;
+  save();
+  clearMessage(ui.studentMessage);
+  clearMessage(ui.instructorMessage);
   render();
 }
 
-async function handleEnableLocation() {
-  if (!state.currentUser || state.currentUser.role !== 'student') {
-    showFeedback(elements.studentFeedback, 'Sign in as a student to request location.', 'warning');
-    return;
-  }
-
-  toggleLoading(elements.enableLocationBtn, true, 'Getting location...');
+async function getStudentLocation() {
+  clearMessage(ui.studentMessage);
+  loading(ui.enableLocation, true, "Getting location...");
 
   try {
-    const position = await getCurrentPosition();
-    state.latestStudentLocation = {
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
-      accuracy: position.coords.accuracy,
-      timestamp: new Date(position.timestamp).toISOString()
+    const pos = await currentPosition();
+    state.location = {
+      latitude: pos.coords.latitude,
+      longitude: pos.coords.longitude,
+      accuracy: pos.coords.accuracy
     };
-    saveState();
-    showFeedback(elements.studentFeedback, 'Location permission granted. Your current coordinates are ready for validation.', 'success');
+    save();
+    message(ui.studentMessage, "Location enabled successfully.", "success");
     render();
   } catch (error) {
-    showFeedback(elements.studentFeedback, getGeolocationErrorMessage(error), 'error');
+    message(ui.studentMessage, locationError(error), "error");
   } finally {
-    toggleLoading(elements.enableLocationBtn, false, 'Enable location');
+    loading(ui.enableLocation, false, "Enable Location");
   }
 }
 
-function handleSaveClassroom(event) {
-  event.preventDefault();
+async function getInstructorLocation() {
+  clearMessage(ui.instructorMessage);
+  loading(ui.useCurrentClassroomLocation, true, "Getting location...");
 
-  if (!state.currentUser || state.currentUser.role !== 'instructor') {
-    showFeedback(elements.instructorFeedback, 'Sign in as an instructor to save classroom settings.', 'warning');
-    return;
+  try {
+    const pos = await currentPosition();
+    ui.latitude.value = pos.coords.latitude.toFixed(6);
+    ui.longitude.value = pos.coords.longitude.toFixed(6);
+    message(ui.instructorMessage, "Current location captured. Now save setup.", "success");
+  } catch (error) {
+    message(ui.instructorMessage, locationError(error), "error");
+  } finally {
+    loading(ui.useCurrentClassroomLocation, false, "Use Current Location");
+  }
+}
+
+function saveClassroom() {
+  clearMessage(ui.instructorMessage);
+
+  const courseName = ui.courseName.value.trim();
+  const instructorName = ui.instructorName.value.trim();
+  const room = ui.roomName.value.trim();
+  const latitude = parseFloat(ui.latitude.value);
+  const longitude = parseFloat(ui.longitude.value);
+  const radius = parseInt(ui.radius.value, 10);
+
+  if (!courseName || !instructorName || !room) {
+    return message(ui.instructorMessage, "Fill in course name, instructor name, and room.", "error");
   }
 
-  const courseName = elements.courseNameInput.value.trim();
-  const instructorName = elements.instructorNameInput.value.trim();
-  const room = elements.roomInput.value.trim();
-  const latitude = parseFloat(elements.latitudeInput.value);
-  const longitude = parseFloat(elements.longitudeInput.value);
-  const radius = parseInt(elements.radiusInput.value, 10);
-
-  if (!courseName || !instructorName || !room || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radius) || radius <= 0) {
-    showFeedback(elements.instructorFeedback, 'Please complete all classroom fields with valid values.', 'error');
-    return;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return message(ui.instructorMessage, "Enter a valid latitude and longitude.", "error");
   }
 
-  state.classroom = {
-    ...state.classroom,
-    courseName,
-    instructorName,
-    room,
-    latitude,
-    longitude,
-    radius
-  };
+  if (!Number.isFinite(radius) || radius <= 0) {
+    return message(ui.instructorMessage, "Enter a valid radius.", "error");
+  }
 
-  saveState();
-  showFeedback(elements.instructorFeedback, 'Classroom setup saved successfully.', 'success');
+  state.classroom.courseName = courseName;
+  state.classroom.instructorName = instructorName;
+  state.classroom.room = room;
+  state.classroom.latitude = latitude;
+  state.classroom.longitude = longitude;
+  state.classroom.radius = radius;
+
+  save();
+  message(ui.instructorMessage, "Classroom setup saved.", "success");
   render();
 }
 
-async function handleUseCurrentLocation() {
-  if (!state.currentUser || state.currentUser.role !== 'instructor') {
-    showFeedback(elements.instructorFeedback, 'Sign in as an instructor to capture the classroom location.', 'warning');
-    return;
+function toggleWindow() {
+  clearMessage(ui.instructorMessage);
+
+  if (!Number.isFinite(state.classroom.latitude) || !Number.isFinite(state.classroom.longitude)) {
+    return message(ui.instructorMessage, "Save classroom coordinates first.", "error");
   }
 
-  toggleLoading(elements.useCurrentLocationBtn, true, 'Capturing...');
-
-  try {
-    const position = await getCurrentPosition();
-    elements.latitudeInput.value = position.coords.latitude.toFixed(6);
-    elements.longitudeInput.value = position.coords.longitude.toFixed(6);
-    showFeedback(elements.instructorFeedback, 'Current location captured. Save the classroom setup to apply it.', 'success');
-  } catch (error) {
-    showFeedback(elements.instructorFeedback, getGeolocationErrorMessage(error), 'error');
-  } finally {
-    toggleLoading(elements.useCurrentLocationBtn, false, 'Use my current location');
-  }
-}
-
-function handleToggleWindow() {
-  if (!state.currentUser || state.currentUser.role !== 'instructor') {
-    showFeedback(elements.instructorFeedback, 'Only the instructor can change the attendance window.', 'warning');
-    return;
-  }
-
-  if (!Number.isFinite(Number(state.classroom.latitude)) || !Number.isFinite(Number(state.classroom.longitude))) {
-    showFeedback(elements.instructorFeedback, 'Set and save the classroom coordinates before opening the window.', 'error');
-    return;
-  }
-
-  if (!state.classroom.windowOpen) {
-    state.classroom.windowOpen = true;
-    state.classroom.lastOpenedAt = new Date().toISOString();
-    state.classroom.activeSessionId = `session-${Date.now()}`;
-    showFeedback(elements.instructorFeedback, 'Check-in window is now open.', 'success');
-  } else {
+  if (state.classroom.windowOpen) {
     state.classroom.windowOpen = false;
-    state.classroom.lastClosedAt = new Date().toISOString();
-    state.classroom.activeSessionId = null;
-    showFeedback(elements.instructorFeedback, 'Check-in window has been closed.', 'info');
+    state.classroom.sessionId = null;
+    message(ui.instructorMessage, "Attendance window closed.", "info");
+  } else {
+    state.classroom.windowOpen = true;
+    state.classroom.sessionId = `session-${Date.now()}`;
+    state.classroom.openedAt = new Date().toISOString();
+    message(ui.instructorMessage, "Attendance window opened.", "success");
   }
 
-  saveState();
+  save();
   render();
 }
 
-function handleCheckIn() {
-  const user = state.currentUser;
-  const checkInState = getStudentCheckInState();
+function checkIn() {
+  clearMessage(ui.studentMessage);
 
-  if (!user || user.role !== 'student') {
-    showFeedback(elements.studentFeedback, 'Sign in as a student to check in.', 'warning');
-    return;
+  const check = getCheckState();
+  if (!check.allowed) {
+    return message(ui.studentMessage, check.message, check.type);
   }
 
-  if (!checkInState.allowed) {
-    showFeedback(elements.studentFeedback, checkInState.message, checkInState.feedbackType);
-    return;
-  }
-
-  const record = {
+  state.checkins.push({
     id: `checkin-${Date.now()}`,
-    sessionId: state.classroom.activeSessionId,
-    userId: user.id,
-    userName: user.name,
-    username: user.username,
+    sessionId: state.classroom.sessionId,
+    userId: state.user.id,
+    userName: state.user.name,
+    username: state.user.username,
     courseName: state.classroom.courseName,
     room: state.classroom.room,
-    distance: checkInState.distance,
-    accuracy: state.latestStudentLocation.accuracy,
-    status: 'Present',
+    distance: check.distance,
     timestamp: new Date().toISOString()
-  };
-
-  state.checkins.push(record);
-  saveState();
-  showFeedback(elements.studentFeedback, `Success! You have been marked present at ${formatTime(record.timestamp)}.`, 'success');
-  render();
-}
-
-function handleSeedDemoData() {
-  if (!state.currentUser || state.currentUser.role !== 'instructor') {
-    showFeedback(elements.instructorFeedback, 'Sign in as an instructor to load demo records.', 'warning');
-    return;
-  }
-
-  if (!state.classroom.windowOpen || !state.classroom.activeSessionId) {
-    showFeedback(elements.instructorFeedback, 'Open the check-in window first so the sample records attach to an active session.', 'warning');
-    return;
-  }
-
-  const sampleRecords = [
-    {
-      id: `seed-${Date.now()}-1`,
-      sessionId: state.classroom.activeSessionId,
-      userId: '1001',
-      userName: 'Ava Chen',
-      username: 'avachen-demo',
-      courseName: state.classroom.courseName,
-      room: state.classroom.room,
-      distance: 4.8,
-      accuracy: 9,
-      status: 'Present',
-      timestamp: new Date(Date.now() - 12 * 60000).toISOString()
-    },
-    {
-      id: `seed-${Date.now()}-2`,
-      sessionId: state.classroom.activeSessionId,
-      userId: '1002',
-      userName: 'Noah Patel',
-      username: 'noahpatel-demo',
-      courseName: state.classroom.courseName,
-      room: state.classroom.room,
-      distance: 11.2,
-      accuracy: 11,
-      status: 'Present',
-      timestamp: new Date(Date.now() - 5 * 60000).toISOString()
-    }
-  ];
-
-  const existingUserIds = new Set(getActiveSessionCheckins().map((record) => record.userId));
-  const newRecords = sampleRecords.filter((record) => !existingUserIds.has(record.userId));
-
-  if (newRecords.length === 0) {
-    showFeedback(elements.instructorFeedback, 'Sample records are already loaded for this session.', 'info');
-    return;
-  }
-
-  state.checkins.push(...newRecords);
-  saveState();
-  showFeedback(elements.instructorFeedback, 'Sample records added to the live roster.', 'success');
-  render();
-}
-
-function handleResetDemoData() {
-  if (!confirm('Reset all demo data? This will remove the signed-in user, settings, and attendance records.')) {
-    return;
-  }
-
-  state = structuredClone(defaultState);
-  saveState();
-  showFeedback(elements.authFeedback, 'All demo data has been reset.', 'info');
-  showFeedback(elements.instructorFeedback, 'All demo data has been reset.', 'info');
-  render();
-}
-
-function getStudentCheckInState() {
-  const user = state.currentUser;
-  const classroom = state.classroom;
-  const studentLocation = state.latestStudentLocation;
-
-  if (!user || user.role !== 'student') {
-    return {
-      allowed: false,
-      label: 'Sign in as a student',
-      pillClass: 'pill-muted',
-      message: 'Sign in as a student to check in.',
-      feedbackType: 'warning',
-      distance: null
-    };
-  }
-
-  if (!classroom.windowOpen || !classroom.activeSessionId) {
-    return {
-      allowed: false,
-      label: 'Window closed',
-      pillClass: 'pill-warning',
-      message: 'The instructor has not opened the attendance window yet.',
-      feedbackType: 'warning',
-      distance: null
-    };
-  }
-
-  if (!studentLocation) {
-    return {
-      allowed: false,
-      label: 'Need location',
-      pillClass: 'pill-warning',
-      message: 'Please enable location access before checking in.',
-      feedbackType: 'warning',
-      distance: null
-    };
-  }
-
-  if (!Number.isFinite(Number(classroom.latitude)) || !Number.isFinite(Number(classroom.longitude))) {
-    return {
-      allowed: false,
-      label: 'Classroom not set',
-      pillClass: 'pill-error',
-      message: 'The classroom coordinates have not been configured yet.',
-      feedbackType: 'error',
-      distance: null
-    };
-  }
-
-  const distance = haversineDistance(
-    studentLocation.latitude,
-    studentLocation.longitude,
-    classroom.latitude,
-    classroom.longitude
-  );
-
-  const alreadyCheckedIn = state.checkins.some((record) => {
-    return record.sessionId === classroom.activeSessionId && record.userId === user.id;
   });
 
-  if (alreadyCheckedIn) {
+  save();
+  message(ui.studentMessage, `Success. You were marked present at ${formatTime(new Date())}.`, "success");
+  render();
+}
+
+function getCheckState() {
+  if (!state.user || state.user.role !== "student") {
     return {
       allowed: false,
-      label: 'Already checked in',
-      pillClass: 'pill-info',
-      message: 'Duplicate attendance is not allowed during the same session.',
-      feedbackType: 'info',
+      badge: "Student only",
+      badgeClass: "closed",
+      message: "Sign in as a student first.",
+      type: "warning",
+      distance: null
+    };
+  }
+
+  if (!state.classroom.windowOpen || !state.classroom.sessionId) {
+    return {
+      allowed: false,
+      badge: "Window closed",
+      badgeClass: "closed",
+      message: "The instructor has not opened the check-in window yet.",
+      type: "warning",
+      distance: null
+    };
+  }
+
+  if (!state.location) {
+    return {
+      allowed: false,
+      badge: "Need location",
+      badgeClass: "closed",
+      message: "Please enable location first.",
+      type: "warning",
+      distance: null
+    };
+  }
+
+  const distance = haversine(
+    state.location.latitude,
+    state.location.longitude,
+    state.classroom.latitude,
+    state.classroom.longitude
+  );
+
+  const duplicate = state.checkins.some((item) =>
+    item.sessionId === state.classroom.sessionId && item.userId === state.user.id
+  );
+
+  if (duplicate) {
+    return {
+      allowed: false,
+      badge: "Already checked in",
+      badgeClass: "closed",
+      message: "Duplicate attendance is not allowed.",
+      type: "info",
       distance
     };
   }
 
-  if (distance > Number(classroom.radius)) {
+  if (distance > state.classroom.radius) {
     return {
       allowed: false,
-      label: 'Too far away',
-      pillClass: 'pill-error',
-      message: `You are outside the allowed radius. Current distance: ${distance.toFixed(1)} m.`,
-      feedbackType: 'error',
+      badge: "Outside radius",
+      badgeClass: "error",
+      message: `You are outside the allowed radius. Distance: ${distance.toFixed(1)} m.`,
+      type: "error",
       distance
     };
   }
 
   return {
     allowed: true,
-    label: 'Eligible to check in',
-    pillClass: 'pill-success',
-    message: 'You are inside the allowed radius and can check in.',
-    feedbackType: 'success',
+    badge: "Ready to check in",
+    badgeClass: "open",
+    message: "You are inside the allowed radius.",
+    type: "success",
     distance
   };
 }
 
-function getActiveSessionCheckins() {
-  if (!state.classroom.activeSessionId) {
-    return [];
-  }
-
-  return state.checkins.filter((record) => record.sessionId === state.classroom.activeSessionId);
+function activeRoster() {
+  if (!state.classroom.sessionId) return [];
+  return state.checkins.filter((item) => item.sessionId === state.classroom.sessionId);
 }
 
-function getCurrentPosition() {
+function currentPosition() {
   return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) {
-      reject(new Error('Geolocation is not supported in this browser.'));
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is not supported in this browser."));
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(resolve, reject, GEO_OPTIONS);
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
   });
 }
 
-function haversineDistance(lat1, lon1, lat2, lon2) {
-  const earthRadius = 6371000;
-  const toRadians = (degrees) => degrees * (Math.PI / 180);
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => d * Math.PI / 180;
 
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) ** 2;
 
-  return earthRadius * c;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function formatDateTime(value) {
-  if (!value) {
-    return '—';
+function load() {
+  try {
+    const saved = localStorage.getItem(KEY);
+    return saved ? { ...defaultState, ...JSON.parse(saved), classroom: { ...defaultState.classroom, ...JSON.parse(saved).classroom } } : structured();
+  } catch {
+    return structured();
   }
+}
 
-  return new Date(value).toLocaleString([], {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit'
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(state));
+}
+
+function structured() {
+  return JSON.parse(JSON.stringify(defaultState));
+}
+
+function show(el) {
+  el.classList.remove("hidden");
+}
+
+function hide(el) {
+  el.classList.add("hidden");
+}
+
+function setAvatar(el, url) {
+  el.style.backgroundImage = url ? `url("${url}")` : "none";
+}
+
+function message(el, text, type) {
+  el.textContent = text;
+  el.className = `message ${type}`;
+  show(el);
+}
+
+function clearMessage(el) {
+  el.textContent = "";
+  el.className = "message hidden";
+}
+
+function loading(btn, isLoading, text) {
+  if (!btn.dataset.text) btn.dataset.text = btn.textContent;
+  btn.disabled = isLoading;
+  btn.textContent = isLoading ? text : btn.dataset.text;
+}
+
+function locationError(error) {
+  if (error.message === "Geolocation is not supported in this browser.") return error.message;
+  if (error.code === 1) return "Location access was denied.";
+  if (error.code === 2) return "Location could not be determined.";
+  if (error.code === 3) return "Location request timed out.";
+  return "Unexpected location error.";
+}
+
+function formatDate(value) {
+  return new Date(value).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
   });
 }
 
 function formatTime(value) {
-  if (!value) {
-    return '—';
-  }
-
   return new Date(value).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit'
+    hour: "numeric",
+    minute: "2-digit"
   });
 }
 
-function capitalize(value) {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
-
-function escapeHtml(value) {
+function safe(value) {
   return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
-
-function toggleLoading(button, isLoading, loadingText) {
-  if (!button.dataset.defaultText) {
-    button.dataset.defaultText = button.textContent;
-  }
-
-  button.disabled = isLoading;
-  button.textContent = isLoading ? loadingText : button.dataset.defaultText;
-}
-
-function showFeedback(target, message, type = 'info') {
-  target.textContent = message;
-  target.className = `feedback ${type}`;
-  target.classList.remove('hidden');
-}
-
-function getGeolocationErrorMessage(error) {
-  if (error.message === 'Geolocation is not supported in this browser.') {
-    return error.message;
-  }
-
-  switch (error.code) {
-    case error.PERMISSION_DENIED:
-      return 'Location access was denied. Please allow location permission and try again.';
-    case error.POSITION_UNAVAILABLE:
-      return 'Unable to detect your current location right now.';
-    case error.TIMEOUT:
-      return 'Location request timed out. Try again in a stronger signal area.';
-    default:
-      return 'An unexpected location error occurred.';
-  }
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
